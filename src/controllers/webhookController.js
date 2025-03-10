@@ -1,16 +1,18 @@
 import Wallet from "../models/Wallet.js";
 import Transaction from "../models/Transaction.js";
+import Beneficiary from "../models/Beneficiary.js";
 import crypto from "crypto";
 import dotenv from "dotenv";
-import Beneficiary from "../models/Beneficiary.js";
 
 dotenv.config();
 
 const FINCRA_WEBHOOK_SECRET = process.env.FINCRA_WEBHOOK_SECRET;
 
-// Function to verify Fincra webhook signature securely
+// Securely verify Fincra webhook signature
 const verifyFincraSignature = (req) => {
   const signature = req.headers["x-fincra-signature"];
+  if (!signature) return false; // Prevent undefined errors
+
   const payload = JSON.stringify(req.body);
 
   const expectedSignature = crypto
@@ -18,10 +20,13 @@ const verifyFincraSignature = (req) => {
     .update(payload)
     .digest("hex");
 
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+  return crypto.timingSafeEqual(
+    Buffer.from(signature, "utf-8"),
+    Buffer.from(expectedSignature, "utf-8")
+  );
 };
 
-// Webhook to handle Fincra payment notifications
+// Handle Fincra Payment Webhook
 export const handleFincraWebhook = async (req, res) => {
   try {
     if (!verifyFincraSignature(req)) {
@@ -34,21 +39,22 @@ export const handleFincraWebhook = async (req, res) => {
     if (event === "virtual_account.payment.success") {
       const { amount, currency, accountNumber, reference } = data;
 
-      // Check if transaction already exists (to prevent duplicates)
+      // Prevent duplicate transactions
       const existingTransaction = await Transaction.findOne({ reference });
       if (existingTransaction) {
-        return res.status(200).json({ success: true, message: "Duplicate event ignored" });
+        console.log("Duplicate transaction detected, ignoring...");
+        return res.status(200).json({ success: true, message: "Duplicate transaction ignored" });
       }
 
-      // Find the wallet using accountNumber
+      // Find the associated wallet
       const wallet = await Wallet.findOne({ accountNumber });
       if (!wallet) {
         console.error(`Wallet not found for account: ${accountNumber}`);
         return res.status(404).json({ success: false, message: "Wallet not found" });
       }
 
-      // Store the transaction record
-      const transaction = new Transaction({
+      // Store the transaction first
+      await Transaction.create({
         userId: wallet.userId,
         type: "deposit",
         amount,
@@ -56,13 +62,15 @@ export const handleFincraWebhook = async (req, res) => {
         status: "success",
         reference,
       });
-      await transaction.save();
 
-      // Update the wallet balance atomically
-      wallet.balance += amount;
-      await wallet.save();
+      // Atomic wallet balance update
+      await Wallet.findOneAndUpdate(
+        { accountNumber },
+        { $inc: { balance: amount } },
+        { new: true }
+      );
 
-      console.log(`Deposit of ${amount} ${currency} received for ${wallet.accountNumber}.`);
+      console.log(`Deposit of ${amount} ${currency} credited to ${wallet.accountNumber}.`);
 
       return res.status(200).json({ success: true, message: "Wallet updated successfully" });
     }
@@ -80,6 +88,7 @@ export const handleFincraWebhook = async (req, res) => {
   }
 };
 
+// Handle Beneficiary Update Webhook
 export const handleBeneficiaryUpdateWebhook = async (req, res) => {
   try {
     const { event, data } = req.body;
@@ -87,15 +96,20 @@ export const handleBeneficiaryUpdateWebhook = async (req, res) => {
     if (event === "beneficiary.updated") {
       const { accountNumber, bankName, currency, country } = data;
 
-      await Beneficiary.findOneAndUpdate(
+      const updatedBeneficiary = await Beneficiary.findOneAndUpdate(
         { accountNumber },
         { bankName, currency, country },
         { new: true }
       );
+
+      if (!updatedBeneficiary) {
+        console.warn(`Beneficiary with account ${accountNumber} not found.`);
+      }
     }
 
     res.status(200).json({ success: true, message: "Webhook received" });
   } catch (error) {
+    console.error("Error processing beneficiary webhook:", error.message);
     res.status(400).json({ success: false, message: error.message });
   }
-}
+};
