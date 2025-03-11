@@ -5,7 +5,7 @@ import { createVirtualBankAccount } from "./fincraService.js";
 
 dotenv.config();
 
-const FINCRA_API_KEY = process.env.FINCRA_API_KEY;
+const FINCRA_SECRET_KEY = process.env.FINCRA_SECRET_KEY;
 const FINCRA_WALLET_URL = "https://api.fincra.com/merchant/virtual-accounts/request";
 
 // Function to create a wallet
@@ -75,7 +75,7 @@ export const updateWalletBalance = async (walletId, amount, type) => {
 export const convertCurrency = async (amount, fromCurrency, toCurrency) => {
   try {
     const response = await axios.get(`https://api.fincra.com/v1/marketplace-currency-rates`, {
-      headers: { Authorization: `Bearer ${FINCRA_API_KEY}` },
+      headers: { Authorization: `Bearer ${FINCRA_SECRET_KEY}` },
       params: { from: fromCurrency, to: toCurrency }
     });
     

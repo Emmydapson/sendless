@@ -7,7 +7,7 @@ import User from "../models/User.js";
 
 dotenv.config();
 
-const FINCRA_API_KEY = process.env.FINCRA_API_KEY;
+const FINCRA_SECRET_KEY = process.env.FINCRA_SECRET_KEY;
 const FINCRA_BASE_URL = "https://api.fincra.com/v1/disbursements";
 const FINCRA_FX_URL = "https://api.fincra.com/v1/marketplace-currency-rates";
 
@@ -107,7 +107,7 @@ export const withdrawToBank = async (req, res) => {
       accountNumber,
       accountName,
       narration: "Withdrawal",
-    }, { headers: { Authorization: `Bearer ${FINCRA_API_KEY}` } });
+    }, { headers: { Authorization: `Bearer ${FINCRA_SECRET_KEY}` } });
 
     if (response.data.status !== "success") {
       return res.status(400).json({ success: false, message: "Fincra transfer failed" });
