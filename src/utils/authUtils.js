@@ -1,21 +1,27 @@
-import axios from 'axios';
+import nodemailer from 'nodemailer';
 
-export const sendOTPSMS = async (phone, otp) => {
+export const sendOTPEmail = async (email, otp) => {
   try {
-    const response = await axios.post(process.env.TERMII_BASE_URL, {
-      api_key: process.env.TERMII_API_KEY,
-      to: phone,
-      from: process.env.TERMII_SENDER_ID,
-      sms: `Your OTP code is ${otp}. It will expire in 10 minutes.`,
-      type: 'plain',
-      channel: 'generic'
+    const transporter = nodemailer.createTransport({
+      service: 'gmail', // or use SMTP settings for your email provider
+      auth: {
+        user: process.env.EMAIL_USER, // Your email address
+        pass: process.env.EMAIL_PASS, // Your email password or app password
+      },
     });
 
-    if (response.data.message !== 'Successfully Sent') {
-      throw new Error('Failed to send OTP');
-    }
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Your OTP Code',
+      text: `Your OTP code is ${otp}. It will expire in 10 minutes.`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent:', info.response);
+    return true;
   } catch (error) {
-    console.error('Error sending OTP via SMS:', error.message);
+    console.error('Error sending OTP via email:', error.message);
     throw error;
   }
 };

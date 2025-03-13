@@ -12,6 +12,7 @@ import {
 } from '../middlewares/authValidation.js';
 import * as WalletController from './walletController.js';
 import { compareFaces } from '../services/mxfaceService.js';
+import {sendOTPEmail} from '../utils/authUtils/js'
 
 // Utility function to send OTP via Termii
 const sendOTPSMS = async (phone, otp) => {
@@ -43,7 +44,7 @@ export const registerUser = async (req, res) => {
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         user.otp = otp;
         user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiration
-        await sendOTPSMS(phone, otp);
+        await sendOTPEmail(email, otp);
         await user.save();
         return res.status(200).json({
           message: 'User already exists but not verified. New OTP sent.',
@@ -66,7 +67,7 @@ export const registerUser = async (req, res) => {
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     user.otp = otp;
     user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiration
-    await sendOTPSMS(phone, otp);
+    await sendOTPEmail(email, otp);
     await user.save();
 
     res.status(201).json({
@@ -122,7 +123,7 @@ export const resendOTP = async (req, res) => {
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     user.otp = otp;
     user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiration
-    await sendOTPSMS(user.phone, otp);
+    await sendOTPEmail(user.email, otp);
     await user.save();
 
     res.status(200).json({ message: 'OTP resent successfully' });
