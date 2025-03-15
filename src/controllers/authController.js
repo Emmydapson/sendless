@@ -12,7 +12,7 @@ import {
 } from '../middlewares/authValidation.js';
 import * as WalletController from './walletController.js';
 import { compareFaces } from '../services/mxfaceService.js';
-import {sendOTPEmail} from '../utils/authUtils/js'
+import {sendOTPEmail} from '../utils/authUtils.js'
 
 // Utility function to send OTP via Termii
 const sendOTPSMS = async (phone, otp) => {
