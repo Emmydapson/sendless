@@ -12,7 +12,7 @@ import {
 } from '../middlewares/authValidation.js';
 import * as WalletController from './walletController.js';
 import { compareFaces } from '../services/mxfaceService.js';
-import {sendOTPEmail} from '../utils/authUtils.js'
+import { sendOTPEmail } from '../utils/authUtils.js';
 
 // Utility function to send OTP via Termii
 const sendOTPSMS = async (phone, otp) => {
@@ -20,18 +20,20 @@ const sendOTPSMS = async (phone, otp) => {
   return true; // Simulate a successful response
 };
 
-
+// Check Termii status (Mocked)
 const checkTermiiStatus = async () => {
   console.log('Mock Termii status check: Service is active.');
-  return true; // Simulate that the service is active
+  return true;
 };
 
-
-
-// Registration Controller
+// **Register User**
 export const registerUser = async (req, res) => {
   const { error } = registerSchema.validate(req.body);
-  if (error) return res.status(400).json({ message: error.details[0].message });
+  if (error)
+    return res.status(400).json({ 
+      message: 'Validation failed', 
+      details: error.details.map((err) => err.message) 
+    });
 
   const { firstName, surname, email, phone, gender, password } = req.body;
 
@@ -40,17 +42,22 @@ export const registerUser = async (req, res) => {
 
     if (user) {
       if (!user.isVerified) {
-        // Resend OTP if user already exists but isn't verified
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         user.otp = otp;
-        user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiration
+        user.otpExpires = Date.now() + 10 * 60 * 1000;
         await sendOTPEmail(email, otp);
         await user.save();
-        return res.status(200).json({
-          message: 'User already exists but not verified. New OTP sent.',
+        return res.status(200).json({ 
+          message: 'User already exists but is not verified. A new OTP has been sent to your email.' 
         });
       }
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: 'An account with this email already exists. Try logging in.' });
+    }
+
+    // Validate phone number
+    const parsedPhone = parsePhoneNumber(phone, 'NG'); // Change 'NG' to your country code
+    if (!parsedPhone?.isValid()) {
+      return res.status(400).json({ message: 'Invalid phone number format' });
     }
 
     user = new User({
@@ -60,38 +67,44 @@ export const registerUser = async (req, res) => {
       phone,
       gender,
       password: await bcrypt.hash(password, 10),
-      isVerified: false, // Default is false
+      isVerified: false,
     });
 
-    // Generate and send OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     user.otp = otp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiration
+    user.otpExpires = Date.now() + 10 * 60 * 1000;
     await sendOTPEmail(email, otp);
     await user.save();
 
     res.status(201).json({
-      message: 'Registration successful. Verify OTP sent to your phone.',
+      message: 'Registration successful. Please verify your email using the OTP sent to you.',
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Registration Error:', err);
+    res.status(500).json({ message: 'An unexpected error occurred during registration.' });
   }
 };
 
-
-
-// OTP Verification Controller
+// **Verify OTP**
 export const verifyOTP = async (req, res) => {
   const { error } = otpSchema.validate(req.body);
-  if (error) return res.status(400).json({ message: error.details[0].message });
+  if (error) return res.status(400).json({ message: 'Invalid OTP format', details: error.details });
 
   const { email, otp } = req.body;
 
   try {
-    const user = await User.findOne({ email, otp });
-    if (!user || user.otpExpires < Date.now()) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({ message: 'No account found with this email.' });
+    }
+
+    if (!user.otp || user.otp !== otp) {
+      return res.status(400).json({ message: 'Incorrect OTP. Please check and try again.' });
+    }
+
+    if (user.otpExpires < Date.now()) {
+      return res.status(400).json({ message: 'OTP has expired. Request a new one.' });
     }
 
     user.isVerified = true;
@@ -102,70 +115,68 @@ export const verifyOTP = async (req, res) => {
     const payload = { user: { id: user.id } };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-    res.json({ token });
+    res.status(200).json({ message: 'OTP verified successfully.', token });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('OTP Verification Error:', err);
+    res.status(500).json({ message: 'Server error while verifying OTP' });
   }
 };
 
+// **Login User**
+export const loginUser = async (req, res) => {
+  const { error } = loginSchema.validate(req.body);
+  if (error) return res.status(400).json({ message: 'Invalid login credentials', details: error.details });
 
+  const { emailOrPhone, password } = req.body;
 
-// Resend OTP Controller
+  try {
+    const user = await User.findOne({ 
+      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }] 
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'No account found with these credentials.' });
+    }
+
+    if (!user.isVerified) {
+      return res.status(400).json({ message: 'Your account is not verified. Please check your email for OTP verification.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Incorrect password. Please try again.' });
+    }
+
+    const payload = { user: { id: user.id } };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    res.status(200).json({ message: 'Login successful.', token });
+  } catch (err) {
+    console.error('Login Error:', err);
+    res.status(500).json({ message: 'An error occurred while logging in.' });
+  }
+};
+
+// **Resend OTP**
 export const resendOTP = async (req, res) => {
   const { email } = req.body;
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'User not found' });
+    if (!user) return res.status(400).json({ message: 'No user found with this email.' });
 
-    // Generate and send a new OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     user.otp = otp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiration
+    user.otpExpires = Date.now() + 10 * 60 * 1000;
     await sendOTPEmail(user.email, otp);
     await user.save();
 
-    res.status(200).json({ message: 'OTP resent successfully' });
+    res.status(200).json({ message: 'A new OTP has been sent to your email.' });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Resend OTP Error:', err);
+    res.status(500).json({ message: 'Server error while resending OTP.' });
   }
 };
-
-// Login Controller
-export const loginUser = async (req, res) => {
-  const { error } = loginSchema.validate(req.body);
-  if (error) return res.status(400).json({ message: error.details[0].message });
-
-  const { emailOrPhone, password } = req.body;
-
-  try {
-    const user = await User.findOne({
-      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }],
-    });
-
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
-
-    if (!user.isVerified)
-      return res
-        .status(400)
-        .json({ message: 'Please verify your account before logging in.' });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
-
-    const payload = { user: { id: user.id } };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-    res.json({ token });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
-
-
 
 // Create PIN Controller
 export const createPin = async (req, res) => {
