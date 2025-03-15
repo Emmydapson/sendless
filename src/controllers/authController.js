@@ -29,61 +29,52 @@ const checkTermiiStatus = async () => {
 // **Register User**
 export const registerUser = async (req, res) => {
   const { error } = registerSchema.validate(req.body);
-  if (error)
-    return res.status(400).json({ 
-      message: 'Validation failed', 
-      details: error.details.map((err) => err.message) 
-    });
+  if (error) return res.status(400).json({ message: error.details[0].message });
 
   const { firstName, surname, email, phone, gender, password } = req.body;
 
   try {
-    let user = await User.findOne({ email });
+    // Check if the email or phone number already exists in the database
+    let existingUser = await User.findOne({ $or: [{ email }, { phone }] });
 
-    if (user) {
-      if (!user.isVerified) {
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
-        user.otp = otp;
-        user.otpExpires = Date.now() + 10 * 60 * 1000;
-        await sendOTPEmail(email, otp);
-        await user.save();
-        return res.status(200).json({ 
-          message: 'User already exists but is not verified. A new OTP has been sent to your email.' 
-        });
+    if (existingUser) {
+      if (existingUser.email === email) {
+        return res.status(400).json({ message: 'Email is already registered. Please use another email.' });
       }
-      return res.status(400).json({ message: 'An account with this email already exists. Try logging in.' });
+      if (existingUser.phone === phone) {
+        return res.status(400).json({ message: 'Phone number is already registered. Please use another phone number.' });
+      }
     }
 
-    // Validate phone number
-    const parsedPhone = parsePhoneNumber(phone, 'NG'); // Change 'NG' to your country code
-    if (!parsedPhone?.isValid()) {
-      return res.status(400).json({ message: 'Invalid phone number format' });
-    }
+    // Create new user
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
-    user = new User({
+    const newUser = new User({
       firstName,
       surname,
       email,
       phone,
       gender,
-      password: await bcrypt.hash(password, 10),
+      password: hashedPassword,
+      otp,
+      otpExpires: Date.now() + 10 * 60 * 1000, // OTP expires in 10 minutes
       isVerified: false,
     });
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    user.otp = otp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000;
+    // Send OTP to email
     await sendOTPEmail(email, otp);
-    await user.save();
+    await newUser.save();
 
     res.status(201).json({
-      message: 'Registration successful. Please verify your email using the OTP sent to you.',
+      message: 'Registration successful. Verify OTP sent to your email.',
     });
   } catch (err) {
-    console.error('Registration Error:', err);
-    res.status(500).json({ message: 'An unexpected error occurred during registration.' });
+    console.error(err.message);
+    res.status(500).json({ message: 'An error occurred while registering. Please try again later.' });
   }
 };
+
 
 // **Verify OTP**
 export const verifyOTP = async (req, res) => {
