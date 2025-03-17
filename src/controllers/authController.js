@@ -35,10 +35,12 @@ export const registerUser = async (req, res) => {
 
   try {
     // Check if the email or phone number already exists in the database
-    let existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    let existingUser = await User.findOne({ 
+      $or: [{ email: email.toLowerCase() }, { phone }] // Convert email to lowercase
+    });
 
     if (existingUser) {
-      if (existingUser.email === email) {
+      if (existingUser.email === email.toLowerCase()) {
         return res.status(400).json({ message: 'Email is already registered. Please use another email.' });
       }
       if (existingUser.phone === phone) {
@@ -53,7 +55,7 @@ export const registerUser = async (req, res) => {
     const newUser = new User({
       firstName,
       surname,
-      email,
+      email: email.toLowerCase(), // Store email in lowercase
       phone,
       gender,
       password: hashedPassword,
@@ -74,6 +76,7 @@ export const registerUser = async (req, res) => {
     res.status(500).json({ message: 'An error occurred while registering. Please try again later.' });
   }
 };
+
 
 
 // **Verify OTP**
@@ -122,7 +125,7 @@ export const loginUser = async (req, res) => {
 
   try {
     const user = await User.findOne({ 
-      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }] 
+      $or: [{ email: emailOrPhone.toLowerCase() }, { phone: emailOrPhone }] // Convert email to lowercase
     });
 
     if (!user) {
@@ -138,15 +141,26 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: 'Incorrect password. Please try again.' });
     }
 
+    // Generate JWT token
     const payload = { user: { id: user.id } };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-    res.status(200).json({ message: 'Login successful.', token });
+    // Check if the user has created a PIN and completed KYC
+    let warnings = [];
+    if (!user.pin) warnings.push('You have not created a transaction PIN.');
+    if (!user.kyc || user.kyc.status !== 'Verified') warnings.push('Your KYC verification is incomplete.');
+
+    res.status(200).json({
+      message: 'Login successful.',
+      token,
+      warnings, // Send warnings if any
+    });
   } catch (err) {
     console.error('Login Error:', err);
     res.status(500).json({ message: 'An error occurred while logging in.' });
   }
 };
+
 
 // **Resend OTP**
 export const resendOTP = async (req, res) => {
