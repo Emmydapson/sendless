@@ -29,6 +29,8 @@ export const pinSchema = Joi.object({
 
 export const kycSchema = Joi.object({
   idType: Joi.string().valid('passport', 'national_id', 'driver_license').required(),
-  idNumber: Joi.string().length(11).required(),
-  faceImage: Joi.string().required(),
+  idNumber: Joi.string().required(),
+  firstName: Joi.string().required(),
+  lastName: Joi.string().required(),
+  dob: Joi.string().isoDate().required(), // Ensuring it's a valid date format
 });

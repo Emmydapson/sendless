@@ -13,6 +13,8 @@ import {
 import * as WalletController from './walletController.js';
 import { compareFaces } from '../services/mxfaceService.js';
 import { sendOTPEmail } from '../utils/authUtils.js';
+import Joi from 'joi';
+
 
 // Utility function to send OTP via Termii
 const sendOTPSMS = async (phone, otp) => {
